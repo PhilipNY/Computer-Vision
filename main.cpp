@@ -62,33 +62,60 @@ int main() {
         cerr << "Can't open light source file." << endl;
         exit(1);
     }
-     
-    Mat source = images[0].lightsource;
-    Mat source_t = images[0].lightsource.t();
-    //cout << source << source_t;
-    Mat pseudo = (source_t * source).inv(DECOMP_SVD) * source_t;//(U^TU)U^T 3*1
+    
+    // comine the lightsource matrix to one
+    Mat source(Mat::zeros(6 ,3, CV_32FC(1)));
+    for(int i =0; i < 6; i++) {
+        images[i].lightsource.row(0).copyTo(source.row(i));
+    }
+    //pseudo invert
+    Mat source_t = source.t();
+    Mat pseudo = (source_t * source).inv(DECOMP_SVD) * source_t;//(U^TU)U^T 3*6
+    //cout<<pseudo;
 
-    for(int i = 0; i < images[0].img.rows; i++) {
-        for(int j = 0; j < images[0].img.cols; j++) {
-            Mat b = pseudo * images[0].img.at<uchar>(i, j); 
-            cout << b;
-            cout<< b.at<float>(0, 0) << " " << b.at<float>(1, 0) << " "<< b.at<float>(2, 0) << norm(b, NORM_L2);
-            if(norm(b, NORM_L2) != 0) {
-                for(int k = 0; k < 3; k++) {
-                    //images[0].normal.at<Vec3f>(Point(i, j)) = Vec3f(0, 0, 0);
-                    images[0].normal.at<Vec3f>(i, j).val[k] = b.at<float>(k, 0) / norm(b, NORM_L2);
+    //construct intensity matrix
+    int size = images[0].img.cols * images[0].img.rows;
+    Mat intensity(Mat::zeros(6, size, CV_32FC(1)));//6*size
+    for(int k = 0; k < 6; k++) {
+        for(int i = 0; i < images[k].img.rows; i++) {
+            for(int j = 0; j < images[k].img.cols; j++) {
+                intensity.at<float>(k, i * images[k].img.cols + j) = images[0].img.at<uchar>(i, j);
+                //Mat b = pseudo * images[0].img.at<uchar>(i, j); 
+                //cout << b;
+                //cout<< b.at<float>(0, 0) << " " << b.at<float>(1, 0) << " "<< b.at<float>(2, 0) << norm(b, NORM_L2);
+                /*
+                if(norm(b, NORM_L2) != 0) {
+                    for(int k = 0; k < 3; k++) {
+                        //images[0].normal.at<Vec3f>(Point(i, j)) = Vec3f(0, 0, 0);
+                        images[0].normal.at<Vec3f>(i, j).val[k] = b.at<float>(k, 0) / norm(b, NORM_L2);
+                    }
                 }
+                else {
+                    images[0].normal.at<Vec3f>(i, j) = Vec3f(0, 0, 0); 
+                }*/
+                //cout << images[0].normal.at<Vec3f>(i, j) << endl;
             }
-            else {
-                images[0].normal.at<Vec3f>(i, j) = Vec3f(0, 0, 0); 
-            }
-            cout << images[0].normal.at<Vec3f>(i, j) << endl;
-            //cout << norm(b, NORM_L2) << " " << images[0].normal << endl;
-            //cout << int(images[0].img.at<uchar>(i, j));
-            //Scalar intensity = img[0].at<uchar>(i, j);
-            //cout << intensity << " ";  
         }
     }
+    
+    //normal = b/|b|
+    Mat b = pseudo * intensity;//3*size
+    Mat normal(Mat::zeros(3, size, CV_32FC(1)));
+    for(int i = 0; i < size; i++) {
+        //cout << b.col(i);
+        //cout << norm(b.col(i), NORM_L2);
+        //normal.at<Vec3f>(i, j).val[k] = b.at<float>(k, 0) / norm(b, NORM_L2)
+        if(norm(b.col(i), NORM_L2) != 0) {
+            Mat tmp = b.col(i) / norm(b.col(i), NORM_L2);
+            tmp.copyTo(normal.col(i));
+        }
+        else {
+            Mat tmp(Mat::zeros(3, 1, CV_32FC(1)));
+            tmp.copyTo(normal.col(i));
+        }
+        //tmp.copyTo(normal.col(i));
+    }
+    
     // Mat is a thin template wrapper on top of the Mat class.
     // Mat_::operator()(y, x) does the same thing as Mat::at(y, x).
     /*
