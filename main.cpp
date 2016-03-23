@@ -1,6 +1,8 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp> // imread
 #include <opencv2/highgui.hpp> // imshow, waitKey
+#include <opencv2/opencv.hpp>
+#include <math.h>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -70,10 +72,11 @@ int main() {
     }
     //pseudo invert
     Mat source_t = source.t();
+    cout << source_t << endl;
     Mat pseudo = (source_t * source).inv(DECOMP_SVD) * source_t;//(U^TU)U^T 3*6
-    //cout<<pseudo;
+    cout << pseudo << endl;
 
-    //construct intensity matrix
+    //retrieve intensity
     int size = images[0].img.cols * images[0].img.rows;
     Mat intensity(Mat::zeros(6, size, CV_32FC(1)));//6*size
     for(int k = 0; k < 6; k++) {
@@ -97,16 +100,21 @@ int main() {
             }
         }
     }
+    //cout << intensity << endl;
     
     //normal = b/|b|
     Mat b = pseudo * intensity;//3*size
+
+    //cout << b << endl;
     Mat normal(Mat::zeros(3, size, CV_32FC(1)));
     for(int i = 0; i < size; i++) {
         //cout << b.col(i);
-        //cout << norm(b.col(i), NORM_L2);
-        //normal.at<Vec3f>(i, j).val[k] = b.at<float>(k, 0) / norm(b, NORM_L2)
+        //cout << norm(b.col(i), NORM_L2) << " " << b.col(i) / norm(b.col(i), NORM_L2) << endl;
+        float norm_tmp = sqrt(pow(b.col(i).at<float>(0, 0), 2) + pow(b.col(i).at<float>(1, 0), 2) + pow(b.col(i).at<float>(2, 0), 2));
+        //cout << norm_tmp << " "<< b.col(i) / norm_tmp << endl;
         if(norm(b.col(i), NORM_L2) != 0) {
-            Mat tmp = b.col(i) / norm(b.col(i), NORM_L2);
+            //Mat tmp = b.col(i) / norm(b.col(i), NORM_L2);
+            Mat tmp = b.col(i) / norm_tmp;
             tmp.copyTo(normal.col(i));
         }
         else {
@@ -115,6 +123,62 @@ int main() {
         }
         //tmp.copyTo(normal.col(i));
     }
+   
+    //cout << normal << endl; 
+    Mat z_approx(Mat::zeros(images[0].img.rows, images[0].img.cols, CV_32FC(1)));
+    z_approx.at<float>(0, 0) = 0;
+    for(int i = 1; i < images[0].img.rows; i++) {
+        for(int j = 0; j < images[0].img.cols; j++) {
+            //Mat current = normal.col(i * images[0].img.cols + j);
+            //cout << current;
+            //z_approx[i * images[0].img.cols + j] = (- current.at<float>(0, 0) / current.at<float>(2, 0)) * i + (- current.at<float>(1, 0) / current.at<float>(2, 0)) * j;
+            float tmp_x = 0;
+            float tmp_y = 0;
+            /*
+            for(int m = 0; m < i; m++) {
+                for(int n = 0; n < j; n++) {
+                    Mat current = normal.col(m * images[0].img.cols + n);
+                    tmp_x -= current.at<float>(0, 0) / current.at<float>(2, 0);
+                    tmp_y -= current.at<float>(1, 0) / current.at<float>(2, 0);
+                }
+            }
+            cout << tmp_x << "," << tmp_y << " ";
+            z_approx.at<float>(i, j) = tmp_x + tmp_y;*/
+            //z_approx.at<float>(i, j) = (- current.at<float>(0, 0) / current.at<float>(2, 0)) + (- current.at<float>(1, 0) / current.at<float>(2, 0));
+        }
+    }
+    Mat depth(Mat::zeros(images[0].img.rows, images[0].img.cols, CV_32FC(1)));
+    for(int i = 1; i < images[0].img.rows; i++) {
+        Mat current = normal.col(i * images[0].img.cols);
+        //depth.at<float>(i, 0) = derivative_y.at<float>(i - 1, 0) + depth.at<float>(i - 1, 0);
+        if(current.at<float>(2, 0) != 0) {
+            depth.at<float>(i, 0) = current.at<float>(0, 0) / current.at<float>(2, 0) + depth.at<float>(i - 1, 0); 
+            }
+        else {
+            depth.at<float>(i, 0) = 0;
+        }
+    }
+
+    for(int i = 0; i < images[0].img.rows; i++) {
+        for(int j = 1; j < images[0].img.cols; j++) {
+            Mat current = normal.col(i * images[0].img.cols + j);
+            //depth.at<float>(i, j) = derivative_x.at<float>(i, j-1) + depth.at<float>(i, j - 1);
+            //cout << current; 
+            if(current.at<float>(2, 0) != 0) {
+                //cout << current.at<float>(1, 0) / current.at<float>(2, 0);
+                depth.at<float>(i, j) = 10 * current.at<float>(1, 0) / current.at<float>(2, 0) + depth.at<float>(i, j - 1);
+            }
+            else {
+                depth.at<float>(i, j) = 0;
+            }
+        }
+    }
+    cout << depth;
+    cout << images[0].img;
+    //cout << normal.col(59 * images[0].img.cols + 59);
+    //cout << z_approx;
+    cv::imshow("haha", depth);
+    cv::waitKey(0);
     
     // Mat is a thin template wrapper on top of the Mat class.
     // Mat_::operator()(y, x) does the same thing as Mat::at(y, x).
